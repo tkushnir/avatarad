@@ -97,7 +97,7 @@ def build(name, dryrun):
         "export SSL_CERT_FILE=certfile",
         "export SSL_CERT_DIR=/dev/null",
         "export LDAP_USER_BASE=ou=users,$LDAP_BIND_DN",
-        'go test -coverprofile=coverage.out -ldflags "%s" -o %s.x ./%s/...' % (bld_ver_option, program, program)
+        'go test -test.v -coverprofile=coverage.out -ldflags "%s" -o %s.x ./%s/...' % (bld_ver_option, program, program)
       ]
     },
     {
