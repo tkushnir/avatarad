@@ -84,11 +84,10 @@ func TestHandleVersion(t *testing.T) {
 		t.Errorf("Want response code %d, got %d", want, got)
 	}
 
-	if _, err := io.ReadAll(w.Body); err != nil {
-		t.Errorf("%v while reading response body", err)
+	if err := json.NewDecoder(w.Body).Decode(&v); err != nil {
+		t.Errorf("%v while decoding response body", err)
 	}
 
-	json.NewDecoder(w.Body).Decode(&v)
 	if v.Version != pkgVersion {
 		t.Errorf("response body does not match expected result: "+
 			"want '%s', got '%s'", pkgVersion, v.Version)
@@ -342,7 +341,9 @@ func TestRunService(t *testing.T) {
 	svcDone := make(chan struct{})
 
 	go func() {
-		svc.Run()
+		if err := svc.Run(); err != nil {
+			t.Errorf("Cannot run service")
+		}
 		defer close(svcDone)
 	}()
 
@@ -350,7 +351,9 @@ func TestRunService(t *testing.T) {
 
 	// do checks here
 
-	svc.Shutdown()
+	if err := svc.Shutdown(); err != nil {
+		t.Errorf("Cannot shutdown service gracefully")
+	}
 
 	<-svcDone
 }

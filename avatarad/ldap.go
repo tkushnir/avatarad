@@ -96,7 +96,11 @@ func FillHash() {
 		}
 
 		h := md5.New()
-		io.WriteString(h, mail)
+
+		if _, err := io.WriteString(h, mail); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			continue
+		}
 		hash := fmt.Sprintf("%x", h.Sum(nil))
 		av := hsGet(hash)
 		if len(av.Image) > 0 && time.Since(av.LastUpdate) <= maxTime {

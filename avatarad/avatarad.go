@@ -160,7 +160,9 @@ func versionHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set(contentType, "application/json; charset=utf-8")
 	enc := json.NewEncoder(w)
-	enc.Encode(map[string]string{"version": pkgVersion})
+	if err := enc.Encode(map[string]string{"version": pkgVersion}); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+	}
 }
 
 func healthzHandler(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +175,9 @@ func healthzHandler(w http.ResponseWriter, r *http.Request) {
 	writeNoCacheHeaders(w)
 
 	w.Header().Set(contentType, "text/plain")
-	io.WriteString(w, "OK")
+	if _, err := io.WriteString(w, "OK"); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+	}
 }
 
 func hsGet(h string) Avatar {
@@ -303,5 +307,7 @@ func avatarHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set(contentType, "image/"+imgFormat)
 	w.Header().Set("Content-Length", strconv.Itoa(len(resizedAvatar)))
-	w.Write(resizedAvatar)
+	if _, err := w.Write(resizedAvatar); err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+	}
 }
