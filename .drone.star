@@ -38,6 +38,20 @@ def build(name, dryrun):
   })
   add_steps(s, [
     {
+      "name": "gofmt",
+      "image": "golang:1.17",
+      "commands": [
+        "gofmt -s -l avatarad | grep -q -e ^avatarad/ && exit 1 || :"
+      ]
+    },
+    {
+      "name": "golang lint",
+      "image": "golangci/golangci-lint:v1.44.2",
+      "commands": [
+        "golangci-lint run -v"
+      ]
+    },
+    {
       "name": "copy ldap files",
       "image": "drone/git",
       "commands": [
