@@ -1,6 +1,6 @@
 this_repo_slug = "tkushnir/avatarad"
 program = "avatarad"
-prg_version = "0.3.0"
+prg_version = "0.3.1"
 registry = "docker.io"
 username = "timophey73"
 
