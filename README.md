@@ -2,6 +2,7 @@
 Gravatar-like LDAP avatar proxy service
 
 [![Build Status](https://cloud.drone.io/api/badges/tkushnir/avatarad/status.svg)](https://cloud.drone.io/tkushnir/avatarad)
+[![Go Report Card](https://goreportcard.com/badge/github.com/tkushnir/avatarad)](https://goreportcard.com/report/github.com/tkushnir/avatarad)
 
 Sources can be found at https://github.com/tkushnir/avatarad
 
