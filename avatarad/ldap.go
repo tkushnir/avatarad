@@ -19,7 +19,7 @@ var (
 	tlsConfig tls.Config
 )
 
-// Prepare certificates for LDAP server access
+// PrepareCerts function. Prepares certificates for LDAP server access
 func PrepareCerts() {
 	var err error
 
@@ -47,7 +47,7 @@ func PrepareCerts() {
 	}
 }
 
-// Fill hash map with Avatar elements from LDAP
+// FillHash function. Fills hash map with Avatar elements from LDAP
 func FillHash() {
 	var (
 		l   *ldap.Conn

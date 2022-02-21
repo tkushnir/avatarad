@@ -22,7 +22,7 @@ import (
 	"github.com/nfnt/resize"
 )
 
-// Main configuration options
+// Config struct. Main configuration options
 type Config struct {
 	CAcrtFile       string `envconfig:"LDAP_SSL_CACERT_FILE"`
 	LdapServerFQDN  string `envconfig:"LDAP_SERVER_FQDN" required:"true"`
@@ -40,7 +40,7 @@ type Config struct {
 	GravatarURL     string `envconfig:"GRAVATAR_URL" default:"https://secure.gravatar.com/avatar"`
 }
 
-// Main HTTP service
+// Service struct. Main HTTP service
 type Service struct {
 	httpServer *http.Server
 	Running    chan struct{}
@@ -101,7 +101,7 @@ func writeSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Set(xssProtectionHeader, xssProtectionValue)
 }
 
-// Function to create main service
+// NewService function. Creates main service
 func NewService() *Service {
 	mux := http.NewServeMux()
 
@@ -118,7 +118,7 @@ func NewService() *Service {
 	}
 }
 
-// Run the service
+// Run function. Runs the service
 func (s *Service) Run() error {
 	close(s.Running)
 	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -127,7 +127,7 @@ func (s *Service) Run() error {
 	return nil
 }
 
-// Close the service gracefully
+// Shutdown function. Closes the service gracefully
 func (s *Service) Shutdown() error {
 	return s.httpServer.Shutdown(context.TODO())
 }
@@ -201,7 +201,7 @@ func hsDelete(h string) {
 	delete(hs, h)
 }
 
-// Delete hash map elements if they are outdated
+// PruneHash function. Deletes hash map elements if they are outdated
 func PruneHash() {
 	for h := range hs {
 		av := hsGet(h)
