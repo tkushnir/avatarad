@@ -1,6 +1,6 @@
 this_repo_slug = "tkushnir/avatarad"
 program = "avatarad"
-prg_version = "0.3.1"
+prg_version = "0.4.0"
 registry = "docker.io"
 username = "timophey73"
 
@@ -38,15 +38,8 @@ def build(name, dryrun):
   })
   add_steps(s, [
     {
-      "name": "gofmt",
-      "image": "golang:1.17",
-      "commands": [
-        "gofmt -s -l avatarad | grep -q -e ^avatarad/ && exit 1 || :"
-      ]
-    },
-    {
       "name": "golang lint",
-      "image": "golangci/golangci-lint:v1.44.2",
+      "image": "golangci/golangci-lint:v2.0.2",
       "commands": [
         "golangci-lint run -v"
       ]
@@ -90,7 +83,7 @@ def build(name, dryrun):
     },
     {
       "name": "test",
-      "image": "golang:1.17",
+      "image": "golang:1.24.2",
       "commands": [
         "export GOPATH=$DRONE_WORKSPACE_BASE/go",
         "go mod download",
@@ -102,7 +95,7 @@ def build(name, dryrun):
     },
     {
       "name": "build program",
-      "image": "golang:1.17-alpine3.15",
+      "image": "golang:1.24.2-alpine3.21",
       "commands": [
         "export GOPATH=$DRONE_WORKSPACE_BASE/go",
         'go build -ldflags "-s -w %s" -o %s.x ./%s/...' % (bld_ver_option, program, program)

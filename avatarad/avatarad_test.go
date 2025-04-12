@@ -7,12 +7,13 @@ import (
 	"image"
 	"io"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/kelseyhightower/envconfig"
+	"github.com/caarlos0/env/v10"
 )
 
 type Version struct {
@@ -22,15 +23,20 @@ type Version struct {
 }
 
 type Conf struct {
-	LdapServerFQDN string `envconfig:"LDAP_HOSTNAME" required:"true"`
-	LdapBindUser   string `envconfig:"LDAP_BIND_USER" required:"true"`
-	LdapBindPasswd string `envconfig:"LDAP_ADMIN_PASSWORD" required:"true"`
-	LdapUserBase   string `envconfig:"LDAP_USER_BASE" required:"true"`
+	LdapServerFQDN string `env:"LDAP_HOSTNAME,required"`
+	LdapBindUser   string `env:"LDAP_BIND_USER,required"`
+	LdapBindPasswd string `env:"LDAP_ADMIN_PASSWORD,required"`
+	LdapUserBase   string `env:"LDAP_USER_BASE,required"`
 }
 
 const (
 	ldapPort    = "389"
 	gravatarURL = "http://secure.gravatar.com/avatar"
+	strJpeg     = "jpeg"
+)
+
+var (
+	errTestErrorMsg = errors.New("test error message")
 )
 
 var conf Conf
@@ -38,7 +44,9 @@ var conf Conf
 func TestMain(m *testing.M) {
 	maxTime, _ = time.ParseDuration("30m")
 
-	if err := envconfig.Process("", &conf); err != nil {
+	pkgVersion = "0.1.1.23"
+
+	if err := env.Parse(&conf); err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(1)
 	}
@@ -54,7 +62,7 @@ func TestHandleHealthz(t *testing.T) {
 
 	healthzHandler(w, r)
 
-	if got, want := w.Code, 200; want != got {
+	if got, want := w.Code, http.StatusOK; want != got {
 		t.Errorf("Want response code %d, got %d", want, got)
 	}
 
@@ -69,7 +77,7 @@ func TestHandleHealthz(t *testing.T) {
 	}
 }
 
-func TestHandleHealthzError(t *testing.T) {
+func TestHandleHealthzError(_ *testing.T) {
 	healthzHandler(nil, nil)
 }
 
@@ -80,7 +88,15 @@ func TestHandleVersion(t *testing.T) {
 
 	versionHandler(w, r)
 
-	if got, want := w.Code, 200; want != got {
+	res := w.Result()
+
+	defer func() {
+		if err := res.Body.Close(); err != nil {
+			t.Errorf("%v while closing stream", err)
+		}
+	}()
+
+	if got, want := w.Code, http.StatusOK; want != got {
 		t.Errorf("Want response code %d, got %d", want, got)
 	}
 
@@ -94,30 +110,28 @@ func TestHandleVersion(t *testing.T) {
 	}
 }
 
-func TestHandleVersionError(t *testing.T) {
+func TestHandleVersionError(_ *testing.T) {
 	versionHandler(nil, nil)
 }
 
 func TestHandleAvatar(t *testing.T) {
-	os.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
-	os.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
-	os.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
-	os.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
-	os.Setenv("LDAP_VERIFY_CERT", "false")
-	os.Setenv("GRAVATAR_ENABLED", "true")
-	os.Setenv("GRAVATAR_URL", gravatarURL)
+	t.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
+	t.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
+	t.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
+	t.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
+	t.Setenv("LDAP_VERIFY_CERT", "false")
 
-	_ = envconfig.Process("", &cfg)
+	_ = env.Parse(&cfg)
 
-	hs = make(map[string]Avatar)
-	FillHash()
+	hs = make(map[string]avatar)
+	fillHash()
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/avatar/00000000000000000000000000000000", nil)
 
 	avatarHandler(w, r)
 
-	if got, want := w.Code, 200; want != got {
+	if got, want := w.Code, http.StatusOK; want != got {
 		t.Errorf("Want response code %d, got %d", want, got)
 	}
 
@@ -126,31 +140,29 @@ func TestHandleAvatar(t *testing.T) {
 		t.Errorf("%v while decoding response body", err)
 	}
 
-	if got, want := imgType, "jpeg"; got != want {
+	if got, want := imgType, strJpeg; got != want {
 		t.Errorf("Want image type '%s', got '%s'", want, got)
 	}
 }
 
 func TestHandleAvatarEve(t *testing.T) {
-	os.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
-	os.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
-	os.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
-	os.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
-	os.Setenv("LDAP_VERIFY_CERT", "false")
-	os.Setenv("GRAVATAR_ENABLED", "true")
-	os.Setenv("GRAVATAR_URL", gravatarURL)
+	t.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
+	t.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
+	t.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
+	t.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
+	t.Setenv("LDAP_VERIFY_CERT", "false")
 
-	_ = envconfig.Process("", &cfg)
+	_ = env.Parse(&cfg)
 
-	hs = make(map[string]Avatar)
-	FillHash()
+	hs = make(map[string]avatar)
+	fillHash()
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/avatar/38ff3520bdcc16a3bbe247f78a8e1610", nil)
 
 	avatarHandler(w, r)
 
-	if got, want := w.Code, 200; want != got {
+	if got, want := w.Code, http.StatusOK; want != got {
 		t.Errorf("Want response code %d, got %d", want, got)
 	}
 
@@ -159,30 +171,28 @@ func TestHandleAvatarEve(t *testing.T) {
 		t.Errorf("%v while decoding response body", err)
 	}
 
-	if got, want := imgType, "jpeg"; got != want {
+	if got, want := imgType, strJpeg; got != want {
 		t.Errorf("Want image type '%s', got '%s'", want, got)
 	}
 }
 
 func TestHandleAvatarEveUpdate(t *testing.T) {
-	os.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
-	os.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
-	os.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
-	os.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
-	os.Setenv("LDAP_VERIFY_CERT", "false")
-	os.Setenv("GRAVATAR_ENABLED", "true")
-	os.Setenv("GRAVATAR_URL", gravatarURL)
+	t.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
+	t.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
+	t.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
+	t.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
+	t.Setenv("LDAP_VERIFY_CERT", "false")
 
-	_ = envconfig.Process("", &cfg)
+	_ = env.Parse(&cfg)
 
-	hs = make(map[string]Avatar)
+	hs = make(map[string]avatar)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/avatar/38ff3520bdcc16a3bbe247f78a8e1610", nil)
 
 	avatarHandler(w, r)
 
-	if got, want := w.Code, 200; want != got {
+	if got, want := w.Code, http.StatusOK; want != got {
 		t.Errorf("Want response code %d, got %d", want, got)
 	}
 
@@ -191,7 +201,7 @@ func TestHandleAvatarEveUpdate(t *testing.T) {
 		t.Errorf("%v while decoding response body", err)
 	}
 
-	if got, want := imgType, "jpeg"; got != want {
+	if got, want := imgType, strJpeg; got != want {
 		t.Errorf("Want image type '%s', got '%s'", want, got)
 	}
 }
@@ -199,18 +209,16 @@ func TestHandleAvatarEveUpdate(t *testing.T) {
 func TestHandleAvatarEveInvalidate(t *testing.T) {
 	const m string = "38ff3520bdcc16a3bbe247f78a8e1610"
 
-	os.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
-	os.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
-	os.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
-	os.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
-	os.Setenv("LDAP_VERIFY_CERT", "false")
-	os.Setenv("GRAVATAR_ENABLED", "true")
-	os.Setenv("GRAVATAR_URL", gravatarURL)
+	t.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
+	t.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
+	t.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
+	t.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
+	t.Setenv("LDAP_VERIFY_CERT", "false")
 
-	_ = envconfig.Process("", &cfg)
+	_ = env.Parse(&cfg)
 
-	hs = make(map[string]Avatar)
-	FillHash()
+	hs = make(map[string]avatar)
+	fillHash()
 
 	av := hsGet(m)
 	av.LastUpdate = av.LastUpdate.Add(-time.Hour)
@@ -221,7 +229,40 @@ func TestHandleAvatarEveInvalidate(t *testing.T) {
 
 	avatarHandler(w, r)
 
-	if got, want := w.Code, 200; want != got {
+	if got, want := w.Code, http.StatusOK; want != got {
+		t.Errorf("Want response code %d, got %d", want, got)
+	}
+
+	_, imgType, err := image.Decode(w.Body)
+	if err != nil {
+		t.Errorf("%v while decoding response body", err)
+	}
+
+	if got, want := imgType, strJpeg; got != want {
+		t.Errorf("Want image type '%s', got '%s'", want, got)
+	}
+}
+
+func TestHandleAvatarGitea(t *testing.T) {
+	t.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
+	t.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
+	t.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
+	t.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
+	t.Setenv("LDAP_VERIFY_CERT", "false")
+	t.Setenv("GRAVATAR_ENABLED", "true")
+	t.Setenv("GRAVATAR_URL", gravatarURL)
+
+	_ = env.Parse(&cfg)
+
+	hs = make(map[string]avatar)
+	fillHash()
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/avatar/b3ba9ac9a9461847e97fa0c39b4ba531", nil)
+
+	avatarHandler(w, r)
+
+	if got, want := w.Code, http.StatusOK; want != got {
 		t.Errorf("Want response code %d, got %d", want, got)
 	}
 
@@ -231,39 +272,6 @@ func TestHandleAvatarEveInvalidate(t *testing.T) {
 	}
 
 	if got, want := imgType, "jpeg"; got != want {
-		t.Errorf("Want image type '%s', got '%s'", want, got)
-	}
-}
-
-func TestHandleAvatarGitea(t *testing.T) {
-	os.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
-	os.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
-	os.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
-	os.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
-	os.Setenv("LDAP_VERIFY_CERT", "false")
-	os.Setenv("GRAVATAR_ENABLED", "true")
-	os.Setenv("GRAVATAR_URL", gravatarURL)
-
-	_ = envconfig.Process("", &cfg)
-
-	hs = make(map[string]Avatar)
-	FillHash()
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/avatar/b3ba9ac9a9461847e97fa0c39b4ba531", nil)
-
-	avatarHandler(w, r)
-
-	if got, want := w.Code, 200; want != got {
-		t.Errorf("Want response code %d, got %d", want, got)
-	}
-
-	_, imgType, err := image.Decode(w.Body)
-	if err != nil {
-		t.Errorf("%v while decoding response body", err)
-	}
-
-	if got, want := imgType, "png"; got != want {
 		t.Errorf("Want image type '%s', got '%s'", want, got)
 	}
 }
@@ -274,7 +282,7 @@ func TestHandleAvatarSz(t *testing.T) {
 
 	avatarHandler(w, r)
 
-	if got, want := w.Code, 200; want != got {
+	if got, want := w.Code, http.StatusOK; want != got {
 		t.Errorf("Want response code %d, got %d", want, got)
 	}
 
@@ -283,7 +291,7 @@ func TestHandleAvatarSz(t *testing.T) {
 		t.Errorf("%v while decoding response body", err)
 	}
 
-	if got, want := imgType, "jpeg"; got != want {
+	if got, want := imgType, strJpeg; got != want {
 		t.Errorf("Want image type '%s', got '%s'", want, got)
 	}
 }
@@ -294,7 +302,7 @@ func TestHandleAvatarSize(t *testing.T) {
 
 	avatarHandler(w, r)
 
-	if got, want := w.Code, 200; want != got {
+	if got, want := w.Code, http.StatusOK; want != got {
 		t.Errorf("Want response code %d, got %d", want, got)
 	}
 
@@ -303,17 +311,17 @@ func TestHandleAvatarSize(t *testing.T) {
 		t.Errorf("%v while decoding response body", err)
 	}
 
-	if got, want := imgType, "jpeg"; got != want {
+	if got, want := imgType, strJpeg; got != want {
 		t.Errorf("Want image type '%s', got '%s'", want, got)
 	}
 }
 
-func TestHandleAvatarError(t *testing.T) {
+func TestHandleAvatarError(_ *testing.T) {
 	avatarHandler(nil, nil)
 }
 
 func TestPanicIf(t *testing.T) {
-	err := errors.New("Test error message")
+	err := errTestErrorMsg
 
 	defer func() {
 		if r := recover(); r == nil {
@@ -325,7 +333,7 @@ func TestPanicIf(t *testing.T) {
 }
 
 func TestPanicIfWhat(t *testing.T) {
-	err := errors.New("Test error message")
+	err := errTestErrorMsg
 
 	defer func() {
 		if r := recover(); r == nil {
@@ -337,11 +345,11 @@ func TestPanicIfWhat(t *testing.T) {
 }
 
 func TestRunService(t *testing.T) {
-	svc := NewService()
+	svc := newService()
 	svcDone := make(chan struct{})
 
 	go func() {
-		if err := svc.Run(); err != nil {
+		if err := svc.run(); err != nil {
 			t.Errorf("Cannot run service")
 		}
 		defer close(svcDone)
@@ -351,7 +359,7 @@ func TestRunService(t *testing.T) {
 
 	// do checks here
 
-	if err := svc.Shutdown(); err != nil {
+	if err := svc.shutdown(); err != nil {
 		t.Errorf("Cannot shutdown service gracefully")
 	}
 
@@ -362,60 +370,70 @@ func TestMainBindError(t *testing.T) {
 	l, err := net.Listen("tcp", serverPort)
 	if err != nil {
 		t.Errorf("%v", err)
+
 		return
 	}
-	defer l.Close()
+	defer func() {
+		if err = l.Close(); err != nil {
+			t.Errorf("%v while closing connection", err)
+		}
+	}()
 
-	os.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
-	os.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
-	os.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
-	os.Setenv("LDAP_VERIFY_CERT", "false")
-	os.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
+	t.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
+	t.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
+	t.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
+	t.Setenv("LDAP_VERIFY_CERT", "false")
+	t.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
 
 	main()
 }
 
 func TestCACertNoFile(t *testing.T) {
-	os.Setenv("LDAP_SSL_CACERT_FILE", "/path/does/not/exist")
-	os.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
-	os.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
-	os.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
-	os.Setenv("LDAP_VERIFY_CERT", "false")
-	os.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
+	t.Setenv("LDAP_SSL_CACERT_FILE", "/path/does/not/exist")
+	t.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
+	t.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
+	t.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
+	t.Setenv("LDAP_VERIFY_CERT", "false")
+	t.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
 
-	_ = envconfig.Process("", &cfg)
+	_ = env.Parse(&cfg)
 
-	PrepareCerts()
+	prepareCerts()
 }
 
 func TestCACertDevNull(t *testing.T) {
-	os.Setenv("LDAP_SSL_CACERT_FILE", "/dev/null")
-	os.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
-	os.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
-	os.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
-	os.Setenv("LDAP_VERIFY_CERT", "false")
-	os.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
+	t.Setenv("LDAP_SSL_CACERT_FILE", "/dev/null")
+	t.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
+	t.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
+	t.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
+	t.Setenv("LDAP_VERIFY_CERT", "false")
+	t.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
 
-	_ = envconfig.Process("", &cfg)
+	_ = env.Parse(&cfg)
 
-	PrepareCerts()
+	prepareCerts()
 }
 
 func TestMainNoSSL(t *testing.T) {
 	l, err := net.Listen("tcp", serverPort)
 	if err != nil {
 		t.Errorf("%v", err)
+
 		return
 	}
-	defer l.Close()
+	defer func() {
+		if err = l.Close(); err != nil {
+			t.Errorf("%v while closing connection", err)
+		}
+	}()
 
-	os.Setenv("LDAP_SSL_CACERT_FILE", "/dev/null")
-	os.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
-	os.Setenv("LDAP_PORT", ldapPort)
-	os.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
-	os.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
-	os.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
-	os.Setenv("LDAP_SSL", "false")
+	t.Setenv("LDAP_SSL_CACERT_FILE", "/dev/null")
+	t.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
+	t.Setenv("LDAP_PORT", ldapPort)
+	t.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
+	t.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
+	t.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
+	t.Setenv("LDAP_SSL", "false")
 
 	main()
 }
@@ -424,18 +442,23 @@ func TestMainUseTLS(t *testing.T) {
 	l, err := net.Listen("tcp", serverPort)
 	if err != nil {
 		t.Errorf("%v", err)
+
 		return
 	}
-	defer l.Close()
+	defer func() {
+		if err = l.Close(); err != nil {
+			t.Errorf("%v while closing connection", err)
+		}
+	}()
 
-	os.Setenv("LDAP_SSL_CACERT_FILE", "/dev/null")
-	os.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
-	os.Setenv("LDAP_PORT", ldapPort)
-	os.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
-	os.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
-	os.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
-	os.Setenv("LDAP_SSL", "false")
-	os.Setenv("LDAP_TLS", "true")
+	t.Setenv("LDAP_SSL_CACERT_FILE", "/dev/null")
+	t.Setenv("LDAP_SERVER_FQDN", conf.LdapServerFQDN)
+	t.Setenv("LDAP_PORT", ldapPort)
+	t.Setenv("LDAP_BIND_USER", conf.LdapBindUser)
+	t.Setenv("LDAP_BIND_PASSWORD", conf.LdapBindPasswd)
+	t.Setenv("LDAP_USER_BASE", conf.LdapUserBase)
+	t.Setenv("LDAP_SSL", "false")
+	t.Setenv("LDAP_TLS", "true")
 
 	main()
 }

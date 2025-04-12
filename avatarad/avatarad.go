@@ -1,3 +1,4 @@
+// Main package for avatarad service
 package main
 
 import (
@@ -18,59 +19,57 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kelseyhightower/envconfig"
+	"github.com/caarlos0/env/v10"
 	"github.com/nfnt/resize"
 )
 
-// Config struct. Main configuration options
-type Config struct {
-	CAcrtFile       string `envconfig:"LDAP_SSL_CACERT_FILE"`
-	LdapServerFQDN  string `envconfig:"LDAP_SERVER_FQDN" required:"true"`
-	LdapPort        int    `envconfig:"LDAP_PORT" default:"636"`
-	LdapSSL         bool   `envconfig:"LDAP_SSL" default:"true"`
-	LdapTLS         bool   `envconfig:"LDAP_TLS" default:"false"`
-	LdapVerifyCert  bool   `envconfig:"LDAP_VERIFY_CERT" default:"true"`
-	LdapBindUser    string `envconfig:"LDAP_BIND_USER" required:"true"`
-	LdapBindPasswd  string `envconfig:"LDAP_BIND_PASSWORD" required:"true"`
-	LdapUserBase    string `envconfig:"LDAP_USER_BASE" required:"true"`
-	LdapUserFilter  string `envconfig:"LDAP_USER_FILTER" default:"(objectclass=inetOrgPerson)"`
-	LdapAvatarAttr  string `envconfig:"LDAP_AVATAR_ATTRIBUTE" default:"jpegPhoto"`
-	LdapEmailAttr   string `envconfig:"LDAP_EMAIL_ATTRIBUTE" default:"mail"`
-	GravatarEnabled bool   `envconfig:"GRAVATAR_ENABLED" default:"false"`
-	GravatarURL     string `envconfig:"GRAVATAR_URL" default:"https://secure.gravatar.com/avatar"`
+type config struct {
+	CAcrtFile       string `env:"LDAP_SSL_CACERT_FILE"`
+	LdapServerFQDN  string `env:"LDAP_SERVER_FQDN,required"`
+	LdapPort        int    `env:"LDAP_PORT"                   envDefault:"636"`
+	LdapSSL         bool   `env:"LDAP_SSL"                    envDefault:"true"`
+	LdapTLS         bool   `env:"LDAP_TLS"                    envDefault:"false"`
+	LdapVerifyCert  bool   `env:"LDAP_VERIFY_CERT"            envDefault:"true"`
+	LdapBindUser    string `env:"LDAP_BIND_USER,required"`
+	LdapBindPasswd  string `env:"LDAP_BIND_PASSWORD,required"`
+	LdapUserBase    string `env:"LDAP_USER_BASE,required"`
+	LdapUserFilter  string `env:"LDAP_USER_FILTER"            envDefault:"(objectclass=inetOrgPerson)"`
+	LdapAvatarAttr  string `env:"LDAP_AVATAR_ATTRIBUTE"       envDefault:"jpegPhoto"`
+	LdapEmailAttr   string `env:"LDAP_EMAIL_ATTRIBUTE"        envDefault:"mail"`
+	GravatarEnabled bool   `env:"GRAVATAR_ENABLED"            envDefault:"false"`
+	GravatarURL     string `env:"GRAVATAR_URL"                envDefault:"https://secure.gravatar.com/avatar"`
 }
 
-// Service struct. Main HTTP service
-type Service struct {
+type service struct {
 	httpServer *http.Server
 	Running    chan struct{}
 }
 
-// Avatar element
-type Avatar struct {
+type avatar struct {
 	Image      []byte
 	LastUpdate time.Time
 }
 
 const (
 	contentType         = "Content-Type"
+	defaultTimeout      = 3
+	defaultJpegQuality  = 90
 	frameOptionsHeader  = "X-Frame-Options"
 	frameOptionsValue   = "DENY"
+	serverPort          = ":8080"
 	xssProtectionHeader = "X-XSS-Protection"
 	xssProtectionValue  = "1; mode=block"
-	serverPort          = ":8080"
 )
 
 var (
-	cfg Config
+	cfg config
 	//go:embed media/default.jpg
-	defaultAvatarImg []byte
-	defaultAvatar    = Avatar{Image: defaultAvatarImg}
-	hs               map[string]Avatar
-	lock             = sync.RWMutex{}
-	maxTime          time.Duration
-	pkgVersion       string = ""
-	epoch                   = time.Unix(0, 0).Format(time.RFC1123)
+	defaultAvatar []byte
+	hs            map[string]avatar
+	lock          = sync.RWMutex{}
+	maxTime       time.Duration
+	pkgVersion    string
+	epoch         = time.Unix(0, 0).Format(time.RFC1123)
 )
 
 var noCacheHeaders = map[string]string{
@@ -101,54 +100,53 @@ func writeSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Set(xssProtectionHeader, xssProtectionValue)
 }
 
-// NewService function. Creates main service
-func NewService() *Service {
+func newService() *service {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/version", versionHandler)
 	mux.HandleFunc("/healthz", healthzHandler)
 	mux.HandleFunc("/avatar/", avatarHandler)
 
-	return &Service{
+	return &service{
 		httpServer: &http.Server{
-			Addr:    serverPort,
-			Handler: mux,
+			Addr:              serverPort,
+			Handler:           mux,
+			ReadHeaderTimeout: defaultTimeout * time.Second,
 		},
 		Running: make(chan struct{}),
 	}
 }
 
-// Run function. Runs the service
-func (s *Service) Run() error {
+func (s *service) run() error {
 	close(s.Running)
-	if err := s.httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+	if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+
 	return nil
 }
 
-// Shutdown function. Closes the service gracefully
-func (s *Service) Shutdown() error {
+func (s *service) shutdown() error {
 	return s.httpServer.Shutdown(context.TODO())
 }
 
 func main() {
 	maxTime, _ = time.ParseDuration("30m")
 
-	err := envconfig.Process("", &cfg)
+	err := env.Parse(&cfg)
 	panicIf(err, "while reading configuration")
 
-	hs = make(map[string]Avatar)
-	FillHash()
+	hs = make(map[string]avatar)
+	fillHash()
 
-	svc := NewService()
+	svc := newService()
 
-	if err := svc.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+	if err := svc.run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 	}
 }
 
-func versionHandler(w http.ResponseWriter, r *http.Request) {
+func versionHandler(w http.ResponseWriter, _ *http.Request) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Fprintln(os.Stderr, r)
@@ -161,11 +159,11 @@ func versionHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(contentType, "application/json; charset=utf-8")
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(map[string]string{"version": pkgVersion}); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		fmt.Fprintln(os.Stderr, err)
 	}
 }
 
-func healthzHandler(w http.ResponseWriter, r *http.Request) {
+func healthzHandler(w http.ResponseWriter, _ *http.Request) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Fprintln(os.Stderr, r)
@@ -176,18 +174,18 @@ func healthzHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set(contentType, "text/plain")
 	if _, err := io.WriteString(w, "OK"); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		fmt.Fprintln(os.Stderr, err)
 	}
 }
 
-func hsGet(h string) Avatar {
+func hsGet(h string) avatar {
 	lock.RLock()
 	defer lock.RUnlock()
 
 	return hs[h]
 }
 
-func hsWrite(h string, av Avatar) {
+func hsWrite(h string, av avatar) {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -201,8 +199,7 @@ func hsDelete(h string) {
 	delete(hs, h)
 }
 
-// PruneHash function. Deletes hash map elements if they are outdated
-func PruneHash() {
+func pruneHash() {
 	for h := range hs {
 		av := hsGet(h)
 		if len(av.Image) > 0 && time.Since(av.LastUpdate) > maxTime {
@@ -212,42 +209,51 @@ func PruneHash() {
 	}
 }
 
-func getAvatar(h string) Avatar {
+func getAvatar(h string) avatar {
 	var (
 		body []byte
-		av   Avatar
+		av   avatar
 	)
 
 	av = hsGet(h)
 	if len(av.Image) == 0 || time.Since(av.LastUpdate) > maxTime {
-		PruneHash()
-		FillHash()
+		pruneHash()
+		fillHash()
 		av = hsGet(h)
 		if len(av.Image) > 0 {
 			fmt.Fprintln(os.Stderr, h+" → cached")
+
 			return av
 		}
 		fmt.Fprintln(os.Stderr, h+" × LDAP")
 		if cfg.GravatarEnabled {
-			res, err := http.Get(cfg.GravatarURL + "/" + h + "?s=490&d=404")
-			if err == nil && res.StatusCode == 200 {
+			res, err := http.Get(cfg.GravatarURL + "/" + h + "?s=490&d=" + strconv.Itoa(http.StatusNotFound))
+			if err == nil && res.StatusCode == http.StatusOK {
 				body, err = io.ReadAll(res.Body)
-				res.Body.Close()
-				if err == nil {
-					hsWrite(h, Avatar{
+				cerr := res.Body.Close()
+				if err == nil && cerr == nil {
+					hsWrite(h, avatar{
 						Image:      body,
 						LastUpdate: time.Now(),
 					})
 					fmt.Fprintln(os.Stderr, h+" → Gravatar")
+
 					return hsGet(h)
 				}
 			}
 			fmt.Fprintln(os.Stderr, h+" × Gravatar")
 		}
 		fmt.Fprintln(os.Stderr, h+" → default")
-		return defaultAvatar
+
+		hsWrite(h, avatar{
+			Image:      defaultAvatar,
+			LastUpdate: time.Now(),
+		})
+
+		return hsGet(h)
 	}
 	fmt.Fprintln(os.Stderr, h+" → cached")
+
 	return av
 }
 
@@ -255,12 +261,13 @@ func encodeAvatar(img image.Image, format string) ([]byte, error) {
 	var err error
 
 	buf := new(bytes.Buffer)
-	switch {
-	case format == "jpeg":
-		err = jpeg.Encode(buf, img, &jpeg.Options{Quality: 90})
-	case format == "png":
+	switch format {
+	case "jpeg":
+		err = jpeg.Encode(buf, img, &jpeg.Options{Quality: defaultJpegQuality})
+	case "png":
 		err = png.Encode(buf, img)
 	}
+
 	return buf.Bytes(), err
 }
 
@@ -275,22 +282,24 @@ func avatarHandler(w http.ResponseWriter, r *http.Request) {
 	_, err := io.ReadAll(r.Body)
 	panicIf(err, "while reading request body")
 
+	var size uint64
+
 	q := r.URL.Query()
-	size := 80
+	size = 80
 	qSize := ""
 	if s, ok := q["s"]; ok {
 		qSize = s[0]
 	} else if s, ok := q["size"]; ok {
 		qSize = s[0]
 	}
-	if s, err := strconv.Atoi(qSize); err == nil {
+	if s, err := strconv.ParseUint(qSize, 10, 64); err == nil {
 		size = s
 	}
 
 	var (
 		resizedImg    image.Image
 		resizedAvatar []byte
-		avatar        Avatar
+		avatar        avatar
 	)
 
 	hash := strings.Split(strings.Split(r.URL.Path, "/")[2], ".")[0]
@@ -308,6 +317,6 @@ func avatarHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(contentType, "image/"+imgFormat)
 	w.Header().Set("Content-Length", strconv.Itoa(len(resizedAvatar)))
 	if _, err := w.Write(resizedAvatar); err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		fmt.Fprintln(os.Stderr, err)
 	}
 }

@@ -29,8 +29,6 @@ docker run --rm \
 Also one can use `docker-compose.yml` for this purpose:
 
 ```yaml
-version: '3'
-
 services:
   server:
     image: timophey73/avatarad
@@ -78,7 +76,7 @@ Currently the `avatarad` service is configured through environment variables. No
 - `LDAP_VERIFY_CERT` (optional, default: `true`) – whether the LDAP server SSL certificate should be verified
 - `LDAP_BIND_USER` (**required**) – LDAP manager user dn (e.g. `cn=admin,dc=example,dc=org`)
 - `LDAP_BIND_PASSWORD` (**required**) – LDAP manager password
-- `LDAP_USER_BASE` (**required**) – LDAP subtree holding user accounts (e.g. ou=users,dc=example,dc=org)
+- `LDAP_USER_BASE` (**required**) – LDAP subtree holding user accounts (e.g. `ou=People,dc=example,dc=org`)
 - `LDAP_USER_FILTER` (optional, default: `(objectclass=inetOrgPerson)`) – filter users accounts
 - `LDAP_AVATAR_ATTRIBUTE` (optional, default: `jpegPhoto`) – user avatar attribute
 - `LDAP_EMAIL_ATTRIBUTE` (optional, default: `mail`) – user E-mail attribute
@@ -87,4 +85,4 @@ Currently the `avatarad` service is configured through environment variables. No
 
 If Gravatar is *disabled* (`GRAVATAR_ENABLED = false`), the `avatarad` service tries to fetch a userpic from LDAP. If the userpic is not found the default avatar is used.
 
-If Gravatar is *enabled* and local (LDAP) userpic is not found, the `avatard` service tries to cache Gravatar userpic locally.
+If Gravatar is *enabled* and local (LDAP) userpic is not found, the `avatarad` service tries to cache Gravatar userpic locally.

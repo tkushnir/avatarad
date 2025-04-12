@@ -1,12 +1,11 @@
 package main
 
 import (
-	"crypto/md5"
+	"crypto/md5" // #nosec G501
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"os"
 	"time"
 
@@ -14,13 +13,12 @@ import (
 )
 
 var (
-	certsInit bool = false
+	certsInit = false
 	rootCA    *x509.CertPool
 	tlsConfig tls.Config
 )
 
-// PrepareCerts function. Prepares certificates for LDAP server access
-func PrepareCerts() {
+func prepareCerts() {
 	var err error
 
 	if cfg.LdapSSL || cfg.LdapTLS {
@@ -31,7 +29,7 @@ func PrepareCerts() {
 		}
 
 		if len(cfg.CAcrtFile) != 0 {
-			caCert, err := ioutil.ReadFile(cfg.CAcrtFile)
+			caCert, err := os.ReadFile(cfg.CAcrtFile)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Unable to read CA certificate: %v\n", err)
 			} else if ok := rootCA.AppendCertsFromPEM(caCert); !ok {
@@ -40,34 +38,36 @@ func PrepareCerts() {
 		}
 
 		tlsConfig = tls.Config{
-			InsecureSkipVerify: !cfg.LdapVerifyCert,
+			InsecureSkipVerify: !cfg.LdapVerifyCert, // #nosec G402
 			ServerName:         cfg.LdapServerFQDN,
 			RootCAs:            rootCA,
 		}
 	}
 }
 
-// FillHash function. Fills hash map with Avatar elements from LDAP
-func FillHash() {
+func getEntries() []*ldap.Entry {
 	var (
 		l   *ldap.Conn
 		err error
 	)
 
 	if !certsInit {
-		PrepareCerts()
+		prepareCerts()
 		certsInit = true
 	}
 
 	ldapServPort := fmt.Sprintf("%s:%d", cfg.LdapServerFQDN, cfg.LdapPort)
 
 	if cfg.LdapSSL {
-		l, err = ldap.DialTLS("tcp", ldapServPort, &tlsConfig)
+		l, err = ldap.DialURL("ldaps://"+ldapServPort, ldap.DialWithTLSConfig(&tlsConfig))
 	} else {
-		l, err = ldap.Dial("tcp", ldapServPort)
+		l, err = ldap.DialURL("ldap://" + ldapServPort)
 	}
 	panicIf(err, "while connecting to LDAP server "+ldapServPort)
-	defer l.Close()
+	defer func() {
+		err = l.Close()
+		panicIf(err, "while closing connection to LDAP server "+ldapServPort)
+	}()
 
 	if !cfg.LdapSSL && cfg.LdapTLS {
 		err = l.StartTLS(&tlsConfig)
@@ -84,32 +84,42 @@ func FillHash() {
 	sr, err := l.Search(searchRequest)
 	panicIf(err, "while searching LDAP database")
 
-	for _, entry := range sr.Entries {
+	return sr.Entries
+}
+
+func fillHash() {
+	for _, entry := range getEntries() {
 		mail := entry.GetAttributeValue(cfg.LdapEmailAttr)
 		if len(mail) == 0 {
 			continue
 		}
 
-		avatar := entry.GetRawAttributeValue(cfg.LdapAvatarAttr)
-		if len(avatar) == 0 {
+		av := entry.GetRawAttributeValue(cfg.LdapAvatarAttr)
+		if len(av) == 0 {
 			continue
 		}
 
-		h := md5.New()
-
-		if _, err := io.WriteString(h, mail); err != nil {
-			fmt.Fprintln(os.Stderr, err.Error())
-			continue
-		}
-		hash := fmt.Sprintf("%x", h.Sum(nil))
-		av := hsGet(hash)
-		if len(av.Image) > 0 && time.Since(av.LastUpdate) <= maxTime {
+		hash := fmt.Sprintf("%x", md5.Sum([]byte(mail))) // #nosec G401
+		avtr := hsGet(hash)
+		if len(avtr.Image) > 0 && time.Since(avtr.LastUpdate) <= maxTime {
 			continue
 		}
 
 		fmt.Fprintln(os.Stderr, hash+" → LDAP")
-		hsWrite(hash, Avatar{
-			Image:      avatar,
+		hsWrite(hash, avatar{
+			Image:      av,
+			LastUpdate: time.Now(),
+		})
+
+		hash = fmt.Sprintf("%x", sha256.Sum256([]byte(mail)))
+		avtr = hsGet(hash)
+		if len(avtr.Image) > 0 && time.Since(avtr.LastUpdate) <= maxTime {
+			continue
+		}
+
+		fmt.Fprintln(os.Stderr, hash+" → LDAP")
+		hsWrite(hash, avatar{
+			Image:      av,
 			LastUpdate: time.Now(),
 		})
 	}
